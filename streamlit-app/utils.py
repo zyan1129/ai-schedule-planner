@@ -274,3 +274,150 @@ def create_calendar_html(schedule: List[Dict]) -> str:
     
     html += '</table>'
     return html
+
+from calendar import monthcalendar, month_name
+from datetime import datetime, timedelta
+
+def create_monthly_calendar(schedule: List[Dict], month: int, year: int) -> str:
+    """Create a monthly calendar view with tasks"""
+    
+    cal = monthcalendar(year, month)
+    days_of_week = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    
+    html = '<style>'
+    html += '''
+    .monthly-calendar {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .month-header {
+        background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        color: white;
+        padding: 20px;
+        text-align: center;
+        font-size: 24px;
+        font-weight: bold;
+        grid-column: 1/8;
+    }
+    .day-header {
+        background-color: #f5f5f5;
+        color: #333;
+        padding: 12px;
+        text-align: center;
+        font-weight: bold;
+        border: 1px solid #ddd;
+        min-width: 120px;
+    }
+    .calendar-day {
+        border: 1px solid #ddd;
+        padding: 10px;
+        min-height: 100px;
+        background-color: #fafafa;
+        vertical-align: top;
+    }
+    .calendar-day-number {
+        font-weight: bold;
+        font-size: 16px;
+        margin-bottom: 5px;
+        color: #333;
+    }
+    .calendar-day.other-month {
+        background-color: #f0f0f0;
+        color: #999;
+    }
+    .calendar-day.other-month .calendar-day-number {
+        color: #ccc;
+    }
+    .task-item {
+        font-size: 11px;
+        padding: 4px;
+        margin: 2px 0;
+        border-radius: 3px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .task-item-high {
+        background-color: #ffcdd2;
+        border-left: 3px solid #d32f2f;
+        color: #c62828;
+    }
+    .task-item-medium {
+        background-color: #fff9c4;
+        border-left: 3px solid #f57f17;
+        color: #e65100;
+    }
+    .task-item-low {
+        background-color: #c8e6c9;
+        border-left: 3px solid #388e3c;
+        color: #1b5e20;
+    }
+    .calendar-container {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0;
+    }
+    '''
+    html += '</style>'
+    
+    # Create day mapping
+    day_map = {}
+    for task in schedule:
+        day_name = task.get('day', '').lower()
+        if 'monday' in day_name or 'mon' in day_name:
+            date_key = 'MON'
+        elif 'tuesday' in day_name or 'tue' in day_name:
+            date_key = 'TUE'
+        elif 'wednesday' in day_name or 'wed' in day_name:
+            date_key = 'WED'
+        elif 'thursday' in day_name or 'thu' in day_name:
+            date_key = 'THU'
+        elif 'friday' in day_name or 'fri' in day_name:
+            date_key = 'FRI'
+        elif 'saturday' in day_name or 'sat' in day_name:
+            date_key = 'SAT'
+        elif 'sunday' in day_name or 'sun' in day_name:
+            date_key = 'SUN'
+        else:
+            continue
+        
+        if date_key not in day_map:
+            day_map[date_key] = []
+        day_map[date_key].append(task)
+    
+    html += '<div class="calendar-container">'
+    
+    # Month header
+    html += f'<div class="month-header" style="grid-column: 1/8;">{month_name[month]} {year}</div>'
+    
+    # Day headers
+    for day in days_of_week:
+        html += f'<div class="day-header">{day}</div>'
+    
+    # Calendar days
+    for week in cal:
+        for day_num in week:
+            if day_num == 0:
+                html += '<div class="calendar-day other-month"></div>'
+            else:
+                html += '<div class="calendar-day">'
+                html += f'<div class="calendar-day-number">{day_num}</div>'
+                
+                # Add tasks for this day (using day of week)
+                current_date = datetime(year, month, day_num)
+                day_of_week = current_date.strftime('%a').upper()
+                
+                if day_of_week in day_map:
+                    for task in day_map[day_of_week]:
+                        priority = task.get('priority_name', 'MEDIUM').upper()
+                        priority_class = 'task-item-high' if 'H' in priority else ('task-item-medium' if 'M' in priority else 'task-item-low')
+                        time_str = f"{task.get('start_time', '')}".split(':')[0] + ':' + f"{task.get('start_time', '')}".split(':')[1] if task.get('start_time') else ''
+                        html += f'<div class="task-item {priority_class}" title="{task["task"]}">{time_str} {task["task"][:15]}</div>'
+                
+                html += '</div>'
+    
+    html += '</div>'
+    
+    return html

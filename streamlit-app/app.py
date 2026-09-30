@@ -2,7 +2,7 @@
 import pandas as pd
 from datetime import datetime
 import json
-from utils import parse_schedule, detect_conflicts, generate_options, export_to_csv, export_to_ics, get_calendar_grid, create_calendar_html
+from utils import parse_schedule, detect_conflicts, generate_options, export_to_csv, export_to_ics, get_calendar_grid, create_calendar_html, create_monthly_calendar
 
 st.set_page_config(
     page_title="SmartSchedule - AI Schedule Planner",
@@ -27,10 +27,12 @@ if language == "English":
         "priority_med": "🟡 MEDIUM",
         "priority_low": "🟢 LOW",
         "options": "🎯 Solution Options",
-        "calendar": "📅 Weekly Calendar View",
+        "calendar": "📅 Monthly Calendar View",
         "export": "📥 Export Schedule",
         "csv_btn": "📊 Download as CSV",
         "ics_btn": "📅 Download as ICS (Calendar)",
+        "month": "Select Month",
+        "year": "Select Year",
     }
 else:
     TEXTS = {
@@ -43,10 +45,12 @@ else:
         "priority_med": "🟡 中",
         "priority_low": "🟢 低",
         "options": "🎯 解决方案",
-        "calendar": "📅 周历视图",
+        "calendar": "📅 月历视图",
         "export": "📥 导出日程",
         "csv_btn": "📊 下载为CSV",
         "ics_btn": "📅 下载为日历",
+        "month": "选择月份",
+        "year": "选择年份",
     }
 
 # Initialize session state
@@ -136,16 +140,44 @@ with tab4:
         
         schedule = st.session_state.selected_option if st.session_state.selected_option else st.session_state.schedule
         
-        calendar_html = create_calendar_html(schedule)
+        # Month and Year selector
+        col1, col2 = st.columns(2)
+        
+        now = datetime.now()
+        
+        with col1:
+            selected_month = st.selectbox(
+                TEXTS["month"],
+                range(1, 13),
+                index=now.month - 1,
+                format_func=lambda x: ["January", "February", "March", "April", "May", "June", 
+                                      "July", "August", "September", "October", "November", "December"][x-1]
+            )
+        
+        with col2:
+            selected_year = st.selectbox(
+                TEXTS["year"],
+                range(now.year - 1, now.year + 3),
+                index=1
+            )
+        
+        st.divider()
+        
+        # Display monthly calendar
+        calendar_html = create_monthly_calendar(schedule, selected_month, selected_year)
         st.markdown(calendar_html, unsafe_allow_html=True)
         
         st.divider()
         
-        st.write("**📋 Task Summary:**")
-        for task in schedule:
-            if task.get('start_time'):
-                priority_emoji = "🔴" if "H" in task.get('priority_name', '').upper() else ("🟡" if "M" in task.get('priority_name', '').upper() else "🟢")
-                st.write(f"{priority_emoji} **{task['task']}** - {task['day']} {task['start_time']}-{task['end_time']}")
+        # Legend
+        st.write("**Legend:**")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.write("🔴 **HIGH** - High Priority")
+        with col2:
+            st.write("🟡 **MEDIUM** - Medium Priority")
+        with col3:
+            st.write("🟢 **LOW** - Low Priority")
     else:
         st.info("👈 Go to Input tab first!")
 
