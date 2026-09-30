@@ -1,10 +1,14 @@
 ﻿import re
 from typing import List, Dict
+import json
+from datetime import datetime
 
 def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
+    """Parse schedule and extract priority levels"""
     tasks = []
     time_pattern = r'(\d{1,2}):?(\d{2})?\s*(am|pm|AM|PM)?'
     day_pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)'
+    priority_pattern = r'\((HIGH|MEDIUM|LOW|HIGH\s+PRIORITY|MEDIUM\s+PRIORITY|LOW\s+PRIORITY)\)'
     
     lines = re.split(r'[.!?\n]', user_input)
     
@@ -12,6 +16,16 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
         line = line.strip()
         if not line:
             continue
+        
+        # Extract priority
+        priority_match = re.search(priority_pattern, line, re.IGNORECASE)
+        priority = priority_match.group(1).upper()[:4] if priority_match else "MEDIUM"
+        if "H" in priority:
+            priority_level = 3
+        elif "M" in priority:
+            priority_level = 2
+        else:
+            priority_level = 1
         
         day_match = re.search(day_pattern, line, re.IGNORECASE)
         day = day_match.group(1) if day_match else "General"
@@ -40,7 +54,8 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
             else:
                 start_time, end_time = "09:00", "10:00"
             
-            task_name = re.sub(time_pattern, '', line).strip()
+            task_name = re.sub(priority_pattern, '', line).strip()
+            task_name = re.sub(time_pattern, '', task_name).strip()
             task_name = re.sub(day_pattern, '', task_name, flags=re.IGNORECASE).strip()
             
             if task_name:
@@ -49,12 +64,15 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
                     'day': day,
                     'start_time': start_time,
                     'end_time': end_time,
+                    'priority': priority_level,
+                    'priority_name': priority,
                     'type': 'scheduled'
                 })
     
-    return tasks if tasks else [{'task': 'No tasks parsed', 'day': 'General', 'start_time': '09:00', 'end_time': '10:00'}]
+    return tasks if tasks else [{'task': 'No tasks parsed', 'day': 'General', 'start_time': '09:00', 'end_time': '10:00', 'priority': 2, 'priority_name': 'MEDIUM', 'type': 'scheduled'}]
 
 def detect_conflicts(schedule: List[Dict]) -> List[Dict]:
+    """Detect time conflicts"""
     conflicts = []
     fixed_tasks = [t for t in schedule if t.get('type') == 'scheduled' and t.get('start_time')]
     
@@ -67,7 +85,9 @@ def detect_conflicts(schedule: List[Dict]) -> List[Dict]:
                     conflicts.append({
                         'task1': task1.get('task'),
                         'task2': task2.get('task'),
-                        'day': task1.get('day')
+                        'day': task1.get('day'),
+                        'time1': f"{task1.get('start_time')}-{task1.get('end_time')}",
+                        'time2': f"{task2.get('start_time')}-{task2.get('end_time')}"
                     })
     return conflicts
 
@@ -86,13 +106,75 @@ def time_overlap(start1: str, end1: str, start2: str, end2: str) -> bool:
         return False
 
 def generate_options(schedule: List[Dict], conflicts: List[Dict], language: str = "English") -> List[Dict]:
+    """Generate 3 solution options"""
     options = []
+    
     if not conflicts:
-        options.append({'title': 'Optimized', 'description': 'No conflicts!', 'schedule': schedule})
+        options.append({
+            'title': 'Optimized' if language == "English" else '优化',
+            'description': 'No conflicts found!' if language == "English" else '没有冲突！',
+            'changes': [],
+            'schedule': schedule
+        })
     else:
-        for i in range(3):
-            options.append({'title': f'Option {i+1}', 'description': f'Solution {i+1}', 'schedule': schedule})
+        option1 = {
+            'title': 'Option 1: Move Flexible Tasks' if language == "English" else '选项1：移动灵活任务',
+            'description': 'Schedule flexible tasks in available time slots' if language == "English" else '在可用时间段安排灵活任务',
+            'changes': [f"Move {c['task2']} to Friday evening" for c in conflicts],
+            'schedule': schedule
+        }
+        options.append(option1)
+        
+        option2 = {
+            'title': 'Option 2: Reschedule by Priority' if language == "English" else '选项2：按优先级重新安排',
+            'description': 'Keep high priority tasks, reschedule lower ones' if language == "English" else '保持高优先级任务，重新安排低优先级任务',
+            'changes': [f"Reschedule {c['task1']} to different time" for c in conflicts],
+            'schedule': schedule
+        }
+        options.append(option2)
+        
+        option3 = {
+            'title': 'Option 3: Split Into Smaller Sessions' if language == "English" else '选项3：分成较小的会话',
+            'description': 'Break longer tasks into multiple shorter sessions' if language == "English" else '将较长的任务分解为多个较短的会话',
+            'changes': [f"Split {c['task2']} into 2 sessions" for c in conflicts],
+            'schedule': schedule
+        }
+        options.append(option3)
+    
     return options
 
 def format_schedule(schedule: List[Dict], language: str = "English") -> str:
-    return "📅 Schedule formatted"
+    return "Schedule formatted"
+
+def export_to_csv(schedule: List[Dict]) -> str:
+    """Export schedule as CSV"""
+    csv_content = "Task,Day,Start Time,End Time,Priority\n"
+    for task in schedule:
+        csv_content += f"{task['task']},{task['day']},{task['start_time']},{task['end_time']},{task.get('priority_name', 'MEDIUM')}\n"
+    return csv_content
+
+def export_to_ics(schedule: List[Dict]) -> str:
+    """Export schedule as iCalendar format"""
+    ics = "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//SmartSchedule//EN\nCALSCALE:GREGORIAN\n"
+    for task in schedule:
+        if task.get('start_time'):
+            ics += f"BEGIN:VEVENT\nDTSTART:20240101T{task['start_time'].replace(':', '')}00\nDTEND:20240101T{task['end_time'].replace(':', '')}00\nSUMMARY:{task['task']}\nDESCRIPTION:{task['day']}\nEND:VEVENT\n"
+    ics += "END:VCALENDAR"
+    return ics
+
+def get_calendar_grid(schedule: List[Dict]) -> Dict:
+    """Generate calendar grid for visualization"""
+    days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    hours = list(range(6, 23))
+    
+    grid = {}
+    for day in days:
+        grid[day] = {hour: [] for hour in hours}
+        day_tasks = [t for t in schedule if t.get('day', '').lower() == day.lower()]
+        for task in day_tasks:
+            if task.get('start_time'):
+                start_hour = int(task['start_time'].split(':')[0])
+                if start_hour in grid[day]:
+                    grid[day][start_hour].append(task['task'][:15])
+    
+    return grid
