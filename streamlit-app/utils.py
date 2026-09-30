@@ -6,6 +6,8 @@ from calendar import monthcalendar, month_name
 
 def normalize_date_string(date_str, language="English"):
     today = datetime.now()
+    today_weekday = today.weekday()  # 0=Monday, 6=Sunday
+    
     if language == "Chinese" or "中文" in language:
         if "今天" in date_str or "今日" in date_str:
             return today.strftime("%Y-%m-%d")
@@ -21,6 +23,27 @@ def normalize_date_string(date_str, language="English"):
         elif "tomorrow" in date_str.lower():
             tomorrow = today + timedelta(days=1)
             return tomorrow.strftime("%Y-%m-%d")
+        
+        # Convert English day names (Monday, Tuesday, etc.) to actual dates
+        day_names = {
+            'monday': 0, 'mon': 0,
+            'tuesday': 1, 'tue': 1,
+            'wednesday': 2, 'wed': 2,
+            'thursday': 3, 'thu': 3,
+            'friday': 4, 'fri': 4,
+            'saturday': 5, 'sat': 5,
+            'sunday': 6, 'sun': 6
+        }
+        
+        for day_name, day_num in day_names.items():
+            if day_name in date_str.lower():
+                # Calculate how many days until this day of the week
+                days_ahead = day_num - today_weekday
+                if days_ahead <= 0:  # Target day already happened this week
+                    days_ahead += 7
+                target_date = today + timedelta(days=days_ahead)
+                return target_date.strftime("%Y-%m-%d")
+    
     return date_str
 
 def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
