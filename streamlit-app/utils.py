@@ -48,8 +48,6 @@ def normalize_date_string(date_str, language="English"):
 
 def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
     tasks = []
-    time_pattern = r'(\d{1,2}):?(\d{2})?'
-    period_pattern = r'(am|pm|AM|PM)'
     day_pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun|today|tomorrow|Today|Tomorrow|今天|今日|明天|后天)'
     priority_pattern = r'\((HIGH|MEDIUM|LOW|HIGH\s+PRIORITY|MEDIUM\s+PRIORITY|LOW\s+PRIORITY)\)'
     
@@ -73,22 +71,32 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
         day_str = day_match.group(1) if day_match else "General"
         day = normalize_date_string(day_str, language) if day_str != "General" else day_str
         
-        time_matches = re.findall(time_pattern, line)
+        # Enhanced time pattern: captures time and following am/pm if present
+        time_pattern = r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?'
+        time_matches = re.findall(time_pattern, line, re.IGNORECASE)
         
-        # Extract period (am/pm) - find it in the line
-        period = None
-        period_match = re.search(r'(am|pm|AM|PM)', line, re.IGNORECASE)
-        if period_match:
-            period = period_match.group(1).lower()
+        # Find the last explicit am/pm in the line (for cases like "10-12pm")
+        last_period = None
+        period_matches = re.finditer(r'(am|pm)', line, re.IGNORECASE)
+        for match in period_matches:
+            last_period = match.group(1).lower()
 
         if time_matches:
             times = []
-            for match in time_matches:
-                hour, minute = match
-                hour = int(hour)
-                minute = int(minute) if minute else 0
+            for i, match in enumerate(time_matches):
+                hour_str, minute_str, time_period = match
+                hour = int(hour_str)
+                minute = int(minute_str) if minute_str else 0
                 
-                # Apply period to all times in the range
+                # Determine period for this time:
+                # 1. Use explicit period after this time (if exists)
+                # 2. Otherwise use the last found period in the line
+                # 3. Otherwise use 'am' as default
+                period = time_period.lower() if time_period else last_period
+                if not period:
+                    period = 'am'
+                
+                # Apply period conversion
                 if period == 'pm':
                     if hour != 12:
                         hour += 12
@@ -108,9 +116,9 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
                 start_time, end_time = "09:00", "10:00"
             
             task_name = re.sub(priority_pattern, '', line).strip()
-            task_name = re.sub(time_pattern, '', task_name).strip()
-            task_name = re.sub(period_pattern, '', task_name, flags=re.IGNORECASE).strip()
+            task_name = re.sub(r'\d{1,2}(?::\d{2})?\s*(?:am|pm)?', '', task_name, flags=re.IGNORECASE).strip()
             task_name = re.sub(day_pattern, '', task_name, flags=re.IGNORECASE).strip()
+            task_name = re.sub(r'-', ' ', task_name).strip()
             
             if task_name:
                 tasks.append({
