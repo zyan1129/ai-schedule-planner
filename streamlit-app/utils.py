@@ -1,9 +1,4 @@
-﻿bash
-
-cat /mnt/user-data/outputs/utils_FULLY_FIXED.py
-Output
-
-import re
+﻿import re
 from typing import List, Dict
 import json
 from datetime import datetime, timedelta
