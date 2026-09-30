@@ -5,6 +5,8 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  basePath: '/ai-schedule-planner',
+  assetPrefix: '/ai-schedule-planner',
 }
 
 module.exports = nextConfig
