@@ -1,13 +1,37 @@
-﻿import re
+import re
 from typing import List, Dict
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
+
+# ============ NEW FUNCTION: Normalize relative dates ============
+def normalize_date_string(date_str, language="English"):
+    """Convert relative dates like '今天', 'today' to actual YYYY-MM-DD format"""
+    today = datetime.now()
+    
+    if language == "Chinese" or "中文" in language:
+        if "今天" in date_str or "今日" in date_str:
+            return today.strftime("%Y-%m-%d")
+        elif "明天" in date_str:
+            tomorrow = today + timedelta(days=1)
+            return tomorrow.strftime("%Y-%m-%d")
+        elif "后天" in date_str:
+            day_after = today + timedelta(days=2)
+            return day_after.strftime("%Y-%m-%d")
+    else:
+        if "today" in date_str.lower():
+            return today.strftime("%Y-%m-%d")
+        elif "tomorrow" in date_str.lower():
+            tomorrow = today + timedelta(days=1)
+            return tomorrow.strftime("%Y-%m-%d")
+    
+    return date_str
+# ================================================================
 
 def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
     """Parse schedule and extract priority levels"""
     tasks = []
     time_pattern = r'(\d{1,2}):?(\d{2})?\s*(am|pm|AM|PM)?'
-    day_pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)'
+    day_pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun|今天|今日|明天|后天)'
     priority_pattern = r'\((HIGH|MEDIUM|LOW|HIGH\s+PRIORITY|MEDIUM\s+PRIORITY|LOW\s+PRIORITY)\)'
     
     lines = re.split(r'[.!?\n]', user_input)
@@ -28,7 +52,8 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
             priority_level = 1
         
         day_match = re.search(day_pattern, line, re.IGNORECASE)
-        day = day_match.group(1) if day_match else "General"
+        day_str = day_match.group(1) if day_match else "General"
+        day = normalize_date_string(day_str, language) if day_str != "General" else day_str
         time_matches = re.findall(time_pattern, line)
         
         if time_matches:
@@ -276,7 +301,6 @@ def create_calendar_html(schedule: List[Dict]) -> str:
     return html
 
 from calendar import monthcalendar, month_name
-from datetime import datetime, timedelta
 
 def create_monthly_calendar(schedule: List[Dict], month: int, year: int) -> str:
     """Create a monthly calendar view with tasks"""
