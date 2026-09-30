@@ -1,11 +1,11 @@
-﻿# SmartSchedule - AI-Powered Schedule Planner
+# SmartSchedule - AI-Powered Schedule Planner
 
 An intelligent schedule planning application powered by Google Gemini AI.
 
-**👉 Start with the documentation files to understand the project**
+## 🌐 Live Website
+**Visit the app:** https://zyan1129.github.io/ai-schedule-planner
 
-## Key Features
-
+## Features
 ✅ Natural language input (English + 中文)
 ✅ AI conflict detection
 ✅ Smart schedule generation
@@ -13,22 +13,21 @@ An intelligent schedule planning application powered by Google Gemini AI.
 ✅ Web + Mobile support
 
 ## Tech Stack
-
-- **Frontend:** Next.js 14 + React
+- **Frontend:** Next.js 14 + React + TypeScript
 - **Backend:** Supabase (PostgreSQL)
 - **AI:** Google Gemini API
-- **Mobile:** React Native (Expo)
-- **Deployment:** Vercel
+- **Deployment:** GitHub Pages
 
 ## Quick Start
 
-1. npm install
-2. Create .env.local (copy from .env.example)
-3. npm run dev
+1. `npm install`
+2. Create `.env.local` (copy from `.env.example`)
+3. `npm run dev`
 
-## Documentation Files
+## Documentation
+- `START_HERE.md` - Project overview
+- `SETUP_AND_DEPLOY.md` - Deployment guide
+- `COMPLETE_PROJECT_SUMMARY.md` - Full details
 
-Check the root directory for:
-- START_HERE.md - Quick overview
-- SETUP_AND_DEPLOY.md - Deployment guide
-- SMARTSCHEDULE_README.md - Detailed features
+## GitHub
+https://github.com/zyan1129/ai-schedule-planner
