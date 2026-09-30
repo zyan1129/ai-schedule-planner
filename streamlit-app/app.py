@@ -2,7 +2,7 @@
 import pandas as pd
 from datetime import datetime
 import json
-from utils import parse_schedule, detect_conflicts, generate_options, export_to_csv, export_to_ics, get_calendar_grid
+from utils import parse_schedule, detect_conflicts, generate_options, export_to_csv, export_to_ics, get_calendar_grid, create_calendar_html
 
 st.set_page_config(
     page_title="SmartSchedule - AI Schedule Planner",
@@ -92,11 +92,9 @@ with tab2:
     if st.session_state.schedule:
         st.subheader("📋 Your Schedule")
         
-        # Create DataFrame with priority colors
         df = pd.DataFrame(st.session_state.schedule)
         st.dataframe(df[['task', 'day', 'start_time', 'end_time', 'priority_name']], use_container_width=True)
         
-        # Priority Legend
         st.markdown("**Priority Levels:**")
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -106,7 +104,6 @@ with tab2:
         with col3:
             st.write(f"{TEXTS['priority_low']} - Can move")
         
-        # Conflicts
         if st.session_state.conflicts:
             st.subheader(TEXTS["conflicts"])
             for conflict in st.session_state.conflicts:
@@ -139,31 +136,16 @@ with tab4:
         
         schedule = st.session_state.selected_option if st.session_state.selected_option else st.session_state.schedule
         
-        # Create calendar grid
-        calendar_data = get_calendar_grid(schedule)
-        
-        # Display weekly calendar
-        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-        
-        st.write("**Weekly View (6am - 10pm)**")
-        cols = st.columns(7)
-        for i, day in enumerate(days):
-            with cols[i]:
-                st.write(f"**{day[:3]}**")
-                day_tasks = [t for t in schedule if t.get('day', '').lower() == day.lower()]
-                if day_tasks:
-                    for task in day_tasks:
-                        if task.get('start_time'):
-                            st.write(f"**{task['start_time']}**")
-                            st.write(f"*{task['task'][:20]}...*")
-                else:
-                    st.write("*Free*")
+        calendar_html = create_calendar_html(schedule)
+        st.markdown(calendar_html, unsafe_allow_html=True)
         
         st.divider()
-        st.write("**Detailed View:**")
+        
+        st.write("**📋 Task Summary:**")
         for task in schedule:
             if task.get('start_time'):
-                st.write(f"📌 **{task['task']}** ({task['priority_name']}) - {task['day']} {task['start_time']}-{task['end_time']}")
+                priority_emoji = "🔴" if "H" in task.get('priority_name', '').upper() else ("🟡" if "M" in task.get('priority_name', '').upper() else "🟢")
+                st.write(f"{priority_emoji} **{task['task']}** - {task['day']} {task['start_time']}-{task['end_time']}")
     else:
         st.info("👈 Go to Input tab first!")
 

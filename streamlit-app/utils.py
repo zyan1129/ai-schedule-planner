@@ -178,3 +178,99 @@ def get_calendar_grid(schedule: List[Dict]) -> Dict:
                     grid[day][start_hour].append(task['task'][:15])
     
     return grid
+
+def create_calendar_html(schedule: List[Dict]) -> str:
+    """Create HTML calendar grid"""
+    days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    hours = list(range(6, 23))
+    
+    html = '<style>'
+    html += '''
+    .calendar-grid {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+    }
+    .calendar-header {
+        background-color: #4CAF50;
+        color: white;
+        padding: 10px;
+        font-weight: bold;
+        text-align: center;
+    }
+    .calendar-time {
+        background-color: #f0f0f0;
+        padding: 8px;
+        font-weight: bold;
+        border: 1px solid #ddd;
+        min-width: 60px;
+    }
+    .calendar-cell {
+        border: 1px solid #ddd;
+        padding: 8px;
+        height: 60px;
+        min-width: 140px;
+        background-color: #fafafa;
+        position: relative;
+    }
+    .task-high {
+        background-color: #ffcdd2;
+        border-left: 4px solid #d32f2f;
+        padding: 4px;
+        margin: 2px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: bold;
+    }
+    .task-medium {
+        background-color: #fff9c4;
+        border-left: 4px solid #f57f17;
+        padding: 4px;
+        margin: 2px;
+        border-radius: 3px;
+        font-size: 11px;
+    }
+    .task-low {
+        background-color: #c8e6c9;
+        border-left: 4px solid #388e3c;
+        padding: 4px;
+        margin: 2px;
+        border-radius: 3px;
+        font-size: 11px;
+    }
+    '''
+    html += '</style>'
+    
+    html += '<table class="calendar-grid">'
+    
+    # Header row with days
+    html += '<tr>'
+    html += '<th class="calendar-time">Time</th>'
+    for day in days:
+        html += f'<th class="calendar-header">{day[:3]}</th>'
+    html += '</tr>'
+    
+    # Time rows
+    for hour in hours:
+        html += '<tr>'
+        html += f'<td class="calendar-time">{hour:02d}:00</td>'
+        
+        for day in days:
+            html += '<td class="calendar-cell">'
+            
+            # Find tasks for this day and hour
+            day_tasks = [t for t in schedule if t.get('day', '').lower() == day.lower()]
+            for task in day_tasks:
+                if task.get('start_time'):
+                    task_hour = int(task['start_time'].split(':')[0])
+                    if task_hour == hour:
+                        priority = task.get('priority_name', 'MEDIUM').upper()
+                        priority_class = 'task-high' if 'H' in priority else ('task-medium' if 'M' in priority else 'task-low')
+                        html += f'<div class="{priority_class}">{task["task"][:20]}<br>{task["start_time"]}-{task["end_time"]}</div>'
+            
+            html += '</td>'
+        
+        html += '</tr>'
+    
+    html += '</table>'
+    return html
