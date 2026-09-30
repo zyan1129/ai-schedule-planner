@@ -1,4 +1,9 @@
-﻿import re
+﻿bash
+
+cat /mnt/user-data/outputs/utils_FULLY_FIXED.py
+Output
+
+import re
 from typing import List, Dict
 import json
 from datetime import datetime, timedelta
@@ -24,8 +29,9 @@ def normalize_date_string(date_str, language="English"):
 
 def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
     tasks = []
-    time_pattern = r'(\d{1,2}):?(\d{2})?\s*(am|pm|AM|PM)?'
-    day_pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun|今天|今日|明天|后天)'
+    time_pattern = r'(\d{1,2}):?(\d{2})?'
+    period_pattern = r'(am|pm|AM|PM)'
+    day_pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun|today|tomorrow|Today|Tomorrow|今天|今日|明天|后天)'
     priority_pattern = r'\((HIGH|MEDIUM|LOW|HIGH\s+PRIORITY|MEDIUM\s+PRIORITY|LOW\s+PRIORITY)\)'
     
     lines = re.split(r'[.!?\n]', user_input)
@@ -47,20 +53,30 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
         day_match = re.search(day_pattern, line, re.IGNORECASE)
         day_str = day_match.group(1) if day_match else "General"
         day = normalize_date_string(day_str, language) if day_str != "General" else day_str
+        
         time_matches = re.findall(time_pattern, line)
         
+        # Extract period (am/pm) - find it in the line
+        period = None
+        period_match = re.search(r'(am|pm|AM|PM)', line, re.IGNORECASE)
+        if period_match:
+            period = period_match.group(1).lower()
+
         if time_matches:
             times = []
             for match in time_matches:
-                hour, minute, period = match
+                hour, minute = match
                 hour = int(hour)
                 minute = int(minute) if minute else 0
-                if period and period.lower() in ['pm', 'p']:
+                
+                # Apply period to all times in the range
+                if period == 'pm':
                     if hour != 12:
                         hour += 12
-                elif period and period.lower() in ['am', 'a']:
+                elif period == 'am':
                     if hour == 12:
                         hour = 0
+                
                 times.append(f"{hour:02d}:{minute:02d}")
             
             if len(times) >= 2:
@@ -74,6 +90,7 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
             
             task_name = re.sub(priority_pattern, '', line).strip()
             task_name = re.sub(time_pattern, '', task_name).strip()
+            task_name = re.sub(period_pattern, '', task_name, flags=re.IGNORECASE).strip()
             task_name = re.sub(day_pattern, '', task_name, flags=re.IGNORECASE).strip()
             
             if task_name:
