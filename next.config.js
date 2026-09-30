@@ -1,12 +1,11 @@
-﻿/** @type {import('next').NextConfig} */
+/** @type {import("next").NextConfig} */
 const nextConfig = {
-  output: 'export',
-  reactStrictMode: true,
+  output: "export",
+  basePath: "/ai-schedule-planner",
+  assetPrefix: "/ai-schedule-planner",
   images: {
     unoptimized: true,
   },
-  basePath: '/ai-schedule-planner',
-  assetPrefix: '/ai-schedule-planner',
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;
