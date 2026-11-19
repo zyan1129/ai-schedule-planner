@@ -9,6 +9,9 @@ from utils import (
     export_to_csv,
     export_to_ics,
     create_monthly_calendar,
+    create_day_calendar,
+    create_week_calendar,
+    week_start_of,
     PROVIDER_INFO,
     _PROVIDER_CONFIGS,
 )
@@ -88,7 +91,7 @@ with st.sidebar.expander("🤖 AI Settings" if _en else "🤖 AI 设置", expand
 if language == "English":
     TEXTS = {
         "input": "Paste your schedule (add priority in parentheses):",
-        "example": "Classes: Mon 9-11am CS101 (HIGH), Wed 2-4pm Lab (MEDIUM). Work: Mon-Fri 5-8pm (HIGH). Goals: Gym 3x/week (LOW)",
+        "example": "Mon 9-11am CS101 (HIGH), Wed 14:00-16:00 Lab (MEDIUM), Fri 6-8pm Gym (LOW)  — 12h or 24h both work",
         "parse": "📝 Parse Schedule",
         "conflicts": "⚠️ Conflicts Found",
         "no_conflicts": "✅ No Conflicts!",
@@ -118,7 +121,7 @@ if language == "English":
 else:
     TEXTS = {
         "input": "粘贴您的日程（在括号中添加优先级）：",
-        "example": "课程：周一 9-11am CS101（高），周三 2-4pm 实验（中）。工作：周一到周五 5-8pm（高）。目标：每周健身3次（低）",
+        "example": "周一 9-11am CS101（高），周三 下午 14:00-16:00 实验（中），周五 6-8pm 健身（低） — 12小时制 / 24小时制都支持",
         "parse": "📝 解析日程",
         "conflicts": "⚠️ 检测到冲突",
         "no_conflicts": "✅ 没有冲突！",
@@ -337,10 +340,10 @@ with tab3:
                 st.session_state.chat_history = []
                 st.rerun()
 
-# ---------- Tab 4: Calendar ----------
+# ---------- Tab 4: Calendar (Day / Week / Month) ----------
 with tab4:
     if st.session_state.schedule:
-        st.subheader(TEXTS["calendar"])
+        st.subheader("📅 Calendar" if language == "English" else "📅 日历")
 
         schedule = (
             st.session_state.selected_option['schedule']
@@ -348,28 +351,75 @@ with tab4:
             else st.session_state.schedule
         )
 
-        col1, col2 = st.columns(2)
+        view_labels = (
+            ["Day", "Week", "Month"] if language == "English"
+            else ["日视图", "周视图", "月视图"]
+        )
+        view_mode = st.radio(
+            "View" if language == "English" else "视图",
+            view_labels,
+            horizontal=True,
+            key="cal_view_mode",
+        )
+
         now = datetime.now()
-        with col1:
-            selected_month = st.selectbox(
-                TEXTS["month"],
-                range(1, 13),
-                index=now.month - 1,
-                format_func=lambda x: [
-                    "January", "February", "March", "April", "May", "June",
-                    "July", "August", "September", "October", "November", "December",
-                ][x - 1],
+        st.divider()
+
+        if view_mode == view_labels[0]:
+            # ---------- Day view ----------
+            selected_date = st.date_input(
+                "Date" if language == "English" else "日期",
+                value=now.date(),
+                key="cal_day_date",
             )
-        with col2:
-            selected_year = st.selectbox(
-                TEXTS["year"],
-                range(now.year - 1, now.year + 3),
-                index=1,
+            st.markdown(
+                create_day_calendar(schedule, selected_date),
+                unsafe_allow_html=True,
             )
 
-        st.divider()
-        calendar_html = create_monthly_calendar(schedule, selected_month, selected_year)
-        st.markdown(calendar_html, unsafe_allow_html=True)
+        elif view_mode == view_labels[1]:
+            # ---------- Week view ----------
+            anchor = st.date_input(
+                "Any date in the week" if language == "English" else "该周任意日期",
+                value=now.date(),
+                key="cal_week_anchor",
+            )
+            ws = week_start_of(anchor)
+            st.caption(
+                f"Showing week of **{ws.strftime('%b %d, %Y')}** (Mon–Sun)"
+                if language == "English"
+                else f"显示 **{ws.strftime('%Y年%m月%d日')}** 当周（周一到周日）"
+            )
+            st.markdown(
+                create_week_calendar(schedule, ws),
+                unsafe_allow_html=True,
+            )
+
+        else:
+            # ---------- Month view ----------
+            col1, col2 = st.columns(2)
+            with col1:
+                selected_month = st.selectbox(
+                    TEXTS["month"],
+                    range(1, 13),
+                    index=now.month - 1,
+                    format_func=lambda x: [
+                        "January", "February", "March", "April", "May", "June",
+                        "July", "August", "September", "October", "November", "December",
+                    ][x - 1],
+                    key="cal_month_pick",
+                )
+            with col2:
+                selected_year = st.selectbox(
+                    TEXTS["year"],
+                    range(now.year - 1, now.year + 3),
+                    index=1,
+                    key="cal_year_pick",
+                )
+            st.markdown(
+                create_monthly_calendar(schedule, selected_month, selected_year),
+                unsafe_allow_html=True,
+            )
 
         st.divider()
         st.write("**Legend:**" if language == "English" else "**图例：**")

@@ -198,10 +198,18 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
         day_str = day_match.group(1) if day_match else "General"
         day = normalize_date_string(day_str, language) if day_str != "General" else day_str
 
+        # Chinese AM/PM markers: 上午/早上/凌晨 → am, 下午/晚上/傍晚 → pm.
+        # Checked BEFORE the time regex so they can seed last_period.
+        cn_period = None
+        if re.search(r'上午|早上|凌晨|清晨', line):
+            cn_period = 'am'
+        elif re.search(r'下午|晚上|傍晚|中午', line):
+            cn_period = 'pm'
+
         time_pattern = r'(\d{1,2})(?::(\d{2}))?\s*(am|pm)?'
         time_matches = re.findall(time_pattern, line, re.IGNORECASE)
 
-        last_period = None
+        last_period = cn_period
         for m in re.finditer(r'(am|pm)', line, re.IGNORECASE):
             last_period = m.group(1).lower()
 
@@ -215,7 +223,9 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
                 period = time_period.lower() if time_period else last_period
                 if not period:
                     period = 'am'
-                if period == 'pm' and hour != 12:
+                # 24-hour-safe conversion: use `hour < 12` so a 24h-style
+                # "14" is never doubled into 26 even if period wrongly says pm.
+                if period == 'pm' and hour < 12:
                     hour += 12
                 elif period == 'am' and hour == 12:
                     hour = 0
@@ -501,6 +511,97 @@ def create_calendar_html(schedule: List[Dict]) -> str:
         html += '</tr>'
     html += '</table>'
     return html
+
+
+def _tasks_for_date(schedule: List[Dict], date_obj) -> List[Dict]:
+    """Return tasks whose `day` field matches date_obj (YYYY-MM-DD)."""
+    target = date_obj.strftime('%Y-%m-%d') if hasattr(date_obj, 'strftime') else str(date_obj)
+    return [t for t in schedule if t.get('day') == target]
+
+
+def _priority_class(priority_name: str) -> str:
+    p = (priority_name or 'MEDIUM').upper()
+    if 'H' in p or '高' in p:
+        return 'task-item-high'
+    if 'M' in p or '中' in p:
+        return 'task-item-medium'
+    return 'task-item-low'
+
+
+_SHARED_CSS = """
+<style>
+.sm-cal {width:100%; border-collapse:collapse; background:white; font-family:-apple-system,BlinkMacSystemFont,sans-serif;}
+.sm-cal th, .sm-cal td {border:1px solid #ddd; padding:6px; vertical-align:top;}
+.sm-cal .sm-head {background:linear-gradient(135deg,#4CAF50 0%,#45a049 100%); color:white; font-size:18px; padding:14px; text-align:center; font-weight:bold;}
+.sm-cal .sm-hour {background:#f5f5f5; font-weight:bold; width:70px; text-align:center; color:#555;}
+.sm-cal .sm-daycol {background:#f5f5f5; font-weight:bold; text-align:center; padding:10px;}
+.sm-cal .sm-cell {min-height:38px; height:38px; background:#fafafa;}
+.task-item {font-size:11px; padding:4px 6px; margin:2px 0; border-radius:3px;}
+.task-item-high {background:#ffcdd2; border-left:3px solid #d32f2f; color:#c62828;}
+.task-item-medium {background:#fff9c4; border-left:3px solid #f57f17; color:#e65100;}
+.task-item-low {background:#c8e6c9; border-left:3px solid #388e3c; color:#1b5e20;}
+</style>
+"""
+
+
+def create_day_calendar(schedule: List[Dict], date_obj) -> str:
+    """Single-day view: hours 6-23 in a vertical table."""
+    tasks = _tasks_for_date(schedule, date_obj)
+    label = date_obj.strftime('%A, %B %d, %Y') if hasattr(date_obj, 'strftime') else str(date_obj)
+    html = _SHARED_CSS + '<table class="sm-cal">'
+    html += f'<tr><th class="sm-head" colspan="2">{label}</th></tr>'
+    for hour in range(6, 24):
+        html += f'<tr><td class="sm-hour">{hour:02d}:00</td><td class="sm-cell">'
+        for task in tasks:
+            try:
+                sh = int(task['start_time'].split(':')[0])
+            except Exception:
+                continue
+            if sh == hour:
+                klass = _priority_class(task.get('priority_name', ''))
+                html += (f'<div class="task-item {klass}">'
+                         f'{task["start_time"]}-{task["end_time"]} · {task["task"]}</div>')
+        html += '</td></tr>'
+    html += '</table>'
+    return html
+
+
+def create_week_calendar(schedule: List[Dict], week_start) -> str:
+    """7-day week grid starting Monday; hours 6-23."""
+    days = [week_start + timedelta(days=i) for i in range(7)]
+    day_names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    html = _SHARED_CSS + '<table class="sm-cal">'
+    # Header row with day name + date
+    label = f"Week of {week_start.strftime('%b %d, %Y')}"
+    html += f'<tr><th class="sm-head" colspan="8">{label}</th></tr>'
+    html += '<tr><th class="sm-hour">Time</th>'
+    for name, d in zip(day_names, days):
+        html += f'<th class="sm-daycol">{name}<br><span style="font-weight:normal;color:#777;font-size:12px">{d.strftime("%m/%d")}</span></th>'
+    html += '</tr>'
+    for hour in range(6, 24):
+        html += f'<tr><td class="sm-hour">{hour:02d}:00</td>'
+        for d in days:
+            html += '<td class="sm-cell">'
+            for task in _tasks_for_date(schedule, d):
+                try:
+                    sh = int(task['start_time'].split(':')[0])
+                except Exception:
+                    continue
+                if sh == hour:
+                    klass = _priority_class(task.get('priority_name', ''))
+                    html += (f'<div class="task-item {klass}" title="{task["task"]}">'
+                             f'{task["start_time"]} {task["task"][:12]}</div>')
+            html += '</td>'
+        html += '</tr>'
+    html += '</table>'
+    return html
+
+
+def week_start_of(date_obj) -> object:
+    """Return the Monday of date_obj's week."""
+    if hasattr(date_obj, 'weekday'):
+        return date_obj - timedelta(days=date_obj.weekday())
+    return date_obj
 
 
 def create_monthly_calendar(schedule: List[Dict], month: int, year: int) -> str:
