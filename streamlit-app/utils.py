@@ -175,7 +175,10 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
     day_pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun|today|tomorrow|Today|Tomorrow|今天|今日|明天|后天)'
     priority_pattern = r'\((HIGH|MEDIUM|LOW|HIGH\s+PRIORITY|MEDIUM\s+PRIORITY|LOW\s+PRIORITY|高|中|低)\)'
 
-    lines = re.split(r'[.!?\n。！？]', user_input)
+    # Split on common separators INCLUDING commas and semicolons so each task
+    # gets its own line. Without this, "Mon 9-11am ..., Wed 2-4pm ..." parses
+    # as one line and the first time silently inherits a later task's pm.
+    lines = re.split(r'[.!?\n,;，；。！？]', user_input)
 
     for line in lines:
         line = line.strip()

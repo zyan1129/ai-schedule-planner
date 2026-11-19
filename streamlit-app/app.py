@@ -189,10 +189,41 @@ with tab1:
                     st.session_state.options_ready = False
                     st.session_state.selected_option = None
                     st.session_state.chat_history = []
-                    st.success("✅ Parsed. See Analysis tab." if language == "English" else "✅ 解析完成，见分析页。")
-                    st.rerun()
+                    # No st.rerun() — it discards the success message. Streamlit
+                    # already reruns after a button click, so the tabs below
+                    # will pick up the new schedule on their own.
+                    st.session_state["just_parsed"] = True
                 except Exception as e:
                     st.error(f"Error: {e}")
+
+        # Show a prominent completion banner after parsing — survives reruns.
+        if st.session_state.get("just_parsed") and st.session_state.schedule:
+            n_tasks = len(st.session_state.schedule)
+            n_conflicts = len(st.session_state.conflicts or [])
+            if language == "English":
+                st.success(f"✅ Parsed {n_tasks} task(s). Found {n_conflicts} conflict(s).")
+                if n_conflicts > 0:
+                    st.info(f"👉 Go to the **Solutions** tab — AI will suggest {n_conflicts} fix(es).")
+                else:
+                    st.info("👉 No conflicts. Jump to the **Calendar** or **Export** tab.")
+            else:
+                st.success(f"✅ 解析完成，共 {n_tasks} 个任务，检测到 {n_conflicts} 个冲突。")
+                if n_conflicts > 0:
+                    st.info(f"👉 请去 **Solutions** 页，AI 会给出 {n_conflicts} 个建议方案。")
+                else:
+                    st.info("👉 没有冲突，可以直接去 **Calendar** 或 **Export** 页。")
+
+            # Quick-preview the parsed tasks so the user sees it worked
+            with st.expander(
+                "Preview parsed tasks" if language == "English" else "预览解析结果",
+                expanded=True,
+            ):
+                st.dataframe(
+                    pd.DataFrame(st.session_state.schedule)[
+                        ['task', 'day', 'start_time', 'end_time', 'priority_name']
+                    ],
+                    use_container_width=True,
+                )
 
 # ---------- Tab 2: Analysis ----------
 with tab2:
