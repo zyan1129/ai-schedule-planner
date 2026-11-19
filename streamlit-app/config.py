@@ -24,7 +24,7 @@ def _get_api_key() -> str:
 
 
 GEMINI_API_KEY = _get_api_key()
-GEMINI_MODEL = "gemini-1.5-flash"  # fast + free tier friendly
+GEMINI_MODEL = "gemini-flash-latest"  # fast + free tier friendly, auto-tracks latest
 
 APP_NAME = "SmartSchedule"
 APP_VERSION = "1.1.0"
