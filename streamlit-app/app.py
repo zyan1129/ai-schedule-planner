@@ -109,8 +109,14 @@ if language == "English":
         "chat_placeholder": "Tell the AI what you'd prefer (e.g. 'I want to keep CS101 fixed, move the lab')...",
         "chat_send": "Send",
         "chat_clear": "Clear chat",
-        "select_option": "Adopt this option",
-        "option_adopted": "✅ Option adopted — see it on the Calendar and Export tabs.",
+        "select_option": "Adopt & edit times",
+        "option_adopted": "✅ Option adopted — edit the times below, then click Apply.",
+        "edit_header": "✏️ Reschedule the conflicting tasks",
+        "edit_hint": "Set a new time for each task, or mark it as unsure if you haven't decided yet. Unsure tasks still show on the calendar, dimmed, and will be flagged for review once login & memory are in place.",
+        "mark_unsure": "⏳ Mark as unsure (decide later)",
+        "apply_edits": "💾 Apply changes",
+        "edits_applied": "✅ Changes applied — see them on the Calendar and Export tabs.",
+        "reset_edits": "↺ Reset to parsed schedule",
         "no_conflicts_banner": "✅ No conflicts detected. You can jump straight to the Calendar or Export tab.",
         "tab_input": "📝 Input",
         "tab_analysis": "🔍 Analysis",
@@ -139,8 +145,14 @@ else:
         "chat_placeholder": "告诉 AI 你的偏好（比如：'CS101 不能动，把实验挪开'）...",
         "chat_send": "发送",
         "chat_clear": "清空对话",
-        "select_option": "采用这个方案",
-        "option_adopted": "✅ 已采用这个方案 — 请到日历或导出页查看。",
+        "select_option": "采用并编辑时间",
+        "option_adopted": "✅ 已采用方案 — 在下方编辑时间后点击 Apply。",
+        "edit_header": "✏️ 为冲突任务重新安排时间",
+        "edit_hint": "给每个任务设个新时间，如果还没想好可以标记为 unsure。Unsure 的任务会在日历里以灰色显示；等登录和记忆持久化做好后，会在下次登录时提醒你。",
+        "mark_unsure": "⏳ 暂时不确定（之后再定）",
+        "apply_edits": "💾 应用改动",
+        "edits_applied": "✅ 已应用 — 请到日历或导出页查看。",
+        "reset_edits": "↺ 重置到原始解析",
         "no_conflicts_banner": "✅ 未检测到冲突，可以直接到日历或导出页。",
         "tab_input": "📝 输入",
         "tab_analysis": "🔍 分析",
@@ -157,6 +169,11 @@ for key, default in [
     ("selected_option", None),
     ("chat_history", []),
     ("options_ready", False),
+    # The editable "current" schedule shown on Calendar / Export. Starts as a
+    # copy of what the parser produced and gets replaced when the user applies
+    # their edits from the Solutions tab.
+    ("working_schedule", None),
+    ("editing", False),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -187,10 +204,15 @@ with tab1:
                 try:
                     st.session_state.schedule = parse_schedule(user_input, language)
                     st.session_state.conflicts = detect_conflicts(st.session_state.schedule)
+                    # working_schedule is what the calendar/export show; starts
+                    # as a deep copy of the parsed result and is edited later.
+                    import copy as _copy
+                    st.session_state.working_schedule = _copy.deepcopy(st.session_state.schedule)
                     # Reset downstream state — AI is only called later, on demand
                     st.session_state.options = None
                     st.session_state.options_ready = False
                     st.session_state.selected_option = None
+                    st.session_state.editing = False
                     st.session_state.chat_history = []
                     # No st.rerun() — it discards the success message. Streamlit
                     # already reruns after a button click, so the tabs below
@@ -305,7 +327,101 @@ with tab3:
                             st.write(f"• {change}")
                     if st.button(TEXTS["select_option"], key=f"opt_{i}"):
                         st.session_state.selected_option = option
-                        st.success(TEXTS["option_adopted"])
+                        st.session_state.editing = True
+
+        # ---------- Task editor: actually change the times ----------
+        if st.session_state.editing and st.session_state.working_schedule:
+            st.divider()
+            st.subheader(TEXTS["edit_header"])
+            st.caption(TEXTS["edit_hint"])
+
+            # Identify which tasks are involved in a conflict so we surface
+            # them in the editor first; the rest of the schedule stays below
+            # in a collapsed section.
+            conflict_task_names = set()
+            for c in (st.session_state.conflicts or []):
+                conflict_task_names.add(c['task1'])
+                conflict_task_names.add(c['task2'])
+
+            working = st.session_state.working_schedule
+
+            def _render_task_row(idx, task, container):
+                with container:
+                    col_title, col_day, col_start, col_end, col_unsure = st.columns([2, 2, 1, 1, 1.5])
+                    col_title.markdown(f"**{task['task']}**  \n`{task.get('priority_name', 'MEDIUM')}`")
+                    # Day picker — accept the existing date if it's already YYYY-MM-DD
+                    try:
+                        day_default = datetime.strptime(task['day'], '%Y-%m-%d').date()
+                    except Exception:
+                        day_default = datetime.now().date()
+                    new_day = col_day.date_input(
+                        "Day" if _en else "日期",
+                        value=day_default,
+                        key=f"edit_day_{idx}",
+                        label_visibility="collapsed",
+                    )
+                    new_start = col_start.text_input(
+                        "Start",
+                        value=task.get('start_time', '09:00'),
+                        key=f"edit_start_{idx}",
+                        label_visibility="collapsed",
+                        placeholder="HH:MM",
+                    )
+                    new_end = col_end.text_input(
+                        "End",
+                        value=task.get('end_time', '10:00'),
+                        key=f"edit_end_{idx}",
+                        label_visibility="collapsed",
+                        placeholder="HH:MM",
+                    )
+                    unsure = col_unsure.checkbox(
+                        TEXTS["mark_unsure"],
+                        value=(task.get('status') == 'unsure'),
+                        key=f"edit_unsure_{idx}",
+                    )
+                    return new_day, new_start, new_end, unsure
+
+            conflict_indices = [i for i, t in enumerate(working) if t['task'] in conflict_task_names]
+            other_indices = [i for i, t in enumerate(working) if i not in conflict_indices]
+
+            st.markdown("**" + ("Conflicting tasks" if _en else "有冲突的任务") + "**")
+            edits = {}
+            for idx in conflict_indices:
+                edits[idx] = _render_task_row(idx, working[idx], st.container())
+
+            if other_indices:
+                with st.expander(
+                    "Other tasks (optional edits)" if _en else "其他任务（可选编辑）",
+                    expanded=False,
+                ):
+                    for idx in other_indices:
+                        edits[idx] = _render_task_row(idx, working[idx], st.container())
+
+            col_a, col_b = st.columns([1, 1])
+            with col_a:
+                if st.button(TEXTS["apply_edits"], type="primary", use_container_width=True):
+                    # Mutate working_schedule in place with the editor values
+                    for idx, (new_day, new_start, new_end, unsure) in edits.items():
+                        working[idx]['day'] = new_day.strftime('%Y-%m-%d')
+                        working[idx]['start_time'] = (new_start or '').strip() or working[idx]['start_time']
+                        working[idx]['end_time'] = (new_end or '').strip() or working[idx]['end_time']
+                        if unsure:
+                            working[idx]['status'] = 'unsure'
+                        else:
+                            working[idx].pop('status', None)
+                    # Re-detect conflicts on the updated schedule so Analysis
+                    # reflects the resolution attempt.
+                    st.session_state.conflicts = detect_conflicts(
+                        [t for t in working if t.get('status') != 'unsure']
+                    )
+                    st.success(TEXTS["edits_applied"])
+            with col_b:
+                if st.button(TEXTS["reset_edits"], use_container_width=True):
+                    import copy as _copy
+                    st.session_state.working_schedule = _copy.deepcopy(st.session_state.schedule)
+                    st.session_state.conflicts = detect_conflicts(st.session_state.schedule)
+                    st.session_state.editing = False
+                    st.rerun()
 
         st.divider()
 
@@ -346,8 +462,8 @@ with tab4:
         st.subheader("📅 Calendar" if language == "English" else "📅 日历")
 
         schedule = (
-            st.session_state.selected_option['schedule']
-            if st.session_state.selected_option
+            st.session_state.working_schedule
+            if st.session_state.working_schedule
             else st.session_state.schedule
         )
 
@@ -423,13 +539,15 @@ with tab4:
 
         st.divider()
         st.write("**Legend:**" if language == "English" else "**图例：**")
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
             st.write("🔴 **HIGH**")
         with c2:
             st.write("🟡 **MEDIUM**")
         with c3:
             st.write("🟢 **LOW**")
+        with c4:
+            st.write("⏳ *Unsure*" if language == "English" else "⏳ *不确定*")
     else:
         st.info(
             "👈 Parse your schedule first."
@@ -443,8 +561,8 @@ with tab5:
         st.subheader(TEXTS["export"])
 
         schedule = (
-            st.session_state.selected_option['schedule']
-            if st.session_state.selected_option
+            st.session_state.working_schedule
+            if st.session_state.working_schedule
             else st.session_state.schedule
         )
 
