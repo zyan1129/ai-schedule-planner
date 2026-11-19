@@ -137,13 +137,36 @@ def normalize_date_string(date_str, language="English"):
     today = datetime.now()
     today_weekday = today.weekday()  # 0=Monday, 6=Sunday
 
+    # Chinese weekday / relative-day names, usable in both language modes
+    # since users may mix Chinese dates into English input.
+    cn_relative = {
+        "今天": 0, "今日": 0, "明天": 1, "明日": 1, "后天": 2, "大后天": 3,
+    }
+    for word, offset in cn_relative.items():
+        if word in date_str:
+            return (today + timedelta(days=offset)).strftime("%Y-%m-%d")
+
+    cn_weekdays = {
+        # Monday-Sunday in several common Chinese forms
+        "周一": 0, "星期一": 0, "礼拜一": 0,
+        "周二": 1, "星期二": 1, "礼拜二": 1,
+        "周三": 2, "星期三": 2, "礼拜三": 2,
+        "周四": 3, "星期四": 3, "礼拜四": 3,
+        "周五": 4, "星期五": 4, "礼拜五": 4,
+        "周六": 5, "星期六": 5, "礼拜六": 5,
+        "周日": 6, "周天": 6, "星期日": 6, "星期天": 6, "礼拜日": 6, "礼拜天": 6,
+    }
+    # Longest match first so "星期一" wins over "一".
+    for word in sorted(cn_weekdays, key=len, reverse=True):
+        if word in date_str:
+            days_ahead = cn_weekdays[word] - today_weekday
+            if days_ahead <= 0:
+                days_ahead += 7
+            return (today + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+
     if language == "Chinese" or "中文" in language:
-        if "今天" in date_str or "今日" in date_str:
-            return today.strftime("%Y-%m-%d")
-        elif "明天" in date_str:
-            return (today + timedelta(days=1)).strftime("%Y-%m-%d")
-        elif "后天" in date_str:
-            return (today + timedelta(days=2)).strftime("%Y-%m-%d")
+        # (Chinese relative/weekday forms already handled above.)
+        pass
     else:
         if "today" in date_str.lower():
             return today.strftime("%Y-%m-%d")
@@ -172,8 +195,17 @@ def normalize_date_string(date_str, language="English"):
 def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
     """Local regex-based parser. No AI call — fast and deterministic."""
     tasks = []
-    day_pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun|today|tomorrow|Today|Tomorrow|今天|今日|明天|后天)'
-    priority_pattern = r'\((HIGH|MEDIUM|LOW|HIGH\s+PRIORITY|MEDIUM\s+PRIORITY|LOW\s+PRIORITY|高|中|低)\)'
+    day_pattern = (
+        r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday'
+        r'|Mon|Tue|Wed|Thu|Fri|Sat|Sun'
+        r'|today|tomorrow|Today|Tomorrow'
+        r'|星期一|星期二|星期三|星期四|星期五|星期六|星期日|星期天'
+        r'|礼拜一|礼拜二|礼拜三|礼拜四|礼拜五|礼拜六|礼拜日|礼拜天'
+        r'|周一|周二|周三|周四|周五|周六|周日|周天'
+        r'|今天|今日|明天|明日|后天|大后天)'
+    )
+    # Accept both ASCII (…) and full-width Chinese （…） parentheses
+    priority_pattern = r'[\(（](HIGH|MEDIUM|LOW|HIGH\s+PRIORITY|MEDIUM\s+PRIORITY|LOW\s+PRIORITY|高|中|低)[\)）]'
 
     # Split on common separators INCLUDING commas and semicolons so each task
     # gets its own line. Without this, "Mon 9-11am ..., Wed 2-4pm ..." parses
@@ -220,14 +252,17 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
                 hour = int(hour_str)
                 minute = int(minute_str) if minute_str else 0
 
+                # Was there an EXPLICIT am/pm attached to this specific time?
+                # Important: 12am → 0 should ONLY fire on explicit "12am".
+                # Otherwise "10:00-12:00" (24h, no period) would turn 12 into 0.
+                explicit_period = bool(time_period)
                 period = time_period.lower() if time_period else last_period
                 if not period:
                     period = 'am'
-                # 24-hour-safe conversion: use `hour < 12` so a 24h-style
-                # "14" is never doubled into 26 even if period wrongly says pm.
+                # 24-hour-safe: use `hour < 12` so "14" is never doubled.
                 if period == 'pm' and hour < 12:
                     hour += 12
-                elif period == 'am' and hour == 12:
+                elif explicit_period and period == 'am' and hour == 12:
                     hour = 0
 
                 times.append(f"{hour:02d}:{minute:02d}")
@@ -242,9 +277,24 @@ def parse_schedule(user_input: str, language: str = "English") -> List[Dict]:
                 start_time, end_time = "09:00", "10:00"
 
             task_name = re.sub(priority_pattern, '', line).strip()
-            task_name = re.sub(r'\d{1,2}(?::\d{2})?\s*(?:am|pm)?', '', task_name, flags=re.IGNORECASE).strip()
+            # Strip time EXPRESSIONS (range or single). Must look like a time:
+            # a colon, am/pm, OR a dash between two 1-2 digit numbers. This
+            # keeps course codes like "CS101" intact but removes bare ranges
+            # like "2-4" or "9-11" that we already captured as times.
+            time_strip_patterns = [
+                r'\b\d{1,2}:\d{2}\s*[-–—]\s*\d{1,2}:\d{2}\s*(?:am|pm)?\b',  # 24h range
+                r'\b\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*[-–—]\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b',  # any range
+                r'\b\d{1,2}\s*(?:am|pm)\b',                                   # single 12h
+                r'\b\d{1,2}:\d{2}\b',                                         # single 24h
+            ]
+            for pat in time_strip_patterns:
+                task_name = re.sub(pat, '', task_name, flags=re.IGNORECASE)
             task_name = re.sub(day_pattern, '', task_name, flags=re.IGNORECASE).strip()
-            task_name = re.sub(r'[-:]', ' ', task_name).strip()
+            # Strip Chinese period markers so they don't end up in task titles
+            task_name = re.sub(r'(上午|下午|早上|晚上|凌晨|清晨|傍晚|中午)', '', task_name).strip()
+            # Collapse whitespace and drop leading dashes/colons left over
+            task_name = re.sub(r'^[\s\-:：]+|[\s\-:：]+$', '', task_name)
+            task_name = re.sub(r'\s+', ' ', task_name).strip()
 
             if task_name:
                 tasks.append({
