@@ -24,7 +24,7 @@ def _get_api_key() -> str:
 
 
 GEMINI_API_KEY = _get_api_key()
-GEMINI_MODEL = "gemini-2.5-flash"  # explicit stable version; "latest" alias can hang
+GEMINI_MODEL = "gemini-3.8-flash"  # current stable model for new API users (2026)
 GEMINI_TIMEOUT_SECONDS = 30         # fail loudly if API hangs
 
 APP_NAME = "SmartSchedule"
