@@ -37,7 +37,7 @@ from typing import List, Dict, Any
 
 import google.generativeai as genai
 
-from config import GEMINI_API_KEY, GEMINI_MODEL
+from config import GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TIMEOUT_SECONDS
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +64,11 @@ def _get_model():
 def _ask_gemini_json(prompt: str) -> Any:
     """Call Gemini, strip ```json fences if present, parse JSON."""
     model = _get_model()
-    resp = model.generate_content(prompt)
+    # request_options.timeout = seconds before the SDK gives up (avoids hangs)
+    resp = model.generate_content(
+        prompt,
+        request_options={"timeout": GEMINI_TIMEOUT_SECONDS},
+    )
     text = (resp.text or "").strip()
     fence = re.match(r"^```(?:json)?\s*(.*?)\s*```$", text, re.DOTALL)
     if fence:
