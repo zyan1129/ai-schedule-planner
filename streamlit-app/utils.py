@@ -499,9 +499,13 @@ def format_schedule(schedule: List[Dict], language: str = "English") -> str:
 
 
 def export_to_csv(schedule: List[Dict]) -> str:
-    csv_content = "Task,Day,Start Time,End Time,Priority\n"
+    csv_content = "Task,Day,Start Time,End Time,Priority,Status\n"
     for task in schedule:
-        csv_content += f"{task['task']},{task['day']},{task['start_time']},{task['end_time']},{task.get('priority_name', 'MEDIUM')}\n"
+        status = task.get('status', 'confirmed')
+        title = task['task']
+        if status == 'unsure':
+            title = f"[UNSURE] {title}"
+        csv_content += f"{title},{task['day']},{task['start_time']},{task['end_time']},{task.get('priority_name', 'MEDIUM')},{status}\n"
     return csv_content
 
 
@@ -590,8 +594,18 @@ _SHARED_CSS = """
 .task-item-high {background:#ffcdd2; border-left:3px solid #d32f2f; color:#c62828;}
 .task-item-medium {background:#fff9c4; border-left:3px solid #f57f17; color:#e65100;}
 .task-item-low {background:#c8e6c9; border-left:3px solid #388e3c; color:#1b5e20;}
+.task-item-unsure {background:#eeeeee !important; border-left:3px dashed #999 !important; color:#555 !important; font-style:italic;}
 </style>
 """
+
+
+def _item_classes(task) -> str:
+    """Combine priority class with an 'unsure' modifier when the task is
+    flagged as undecided, so the calendar visually dims it."""
+    base = _priority_class(task.get('priority_name', ''))
+    if task.get('status') == 'unsure':
+        return f"{base} task-item-unsure"
+    return base
 
 
 def create_day_calendar(schedule: List[Dict], date_obj) -> str:
@@ -608,7 +622,7 @@ def create_day_calendar(schedule: List[Dict], date_obj) -> str:
             except Exception:
                 continue
             if sh == hour:
-                klass = _priority_class(task.get('priority_name', ''))
+                klass = _item_classes(task)
                 html += (f'<div class="task-item {klass}">'
                          f'{task["start_time"]}-{task["end_time"]} · {task["task"]}</div>')
         html += '</td></tr>'
@@ -638,7 +652,7 @@ def create_week_calendar(schedule: List[Dict], week_start) -> str:
                 except Exception:
                     continue
                 if sh == hour:
-                    klass = _priority_class(task.get('priority_name', ''))
+                    klass = _item_classes(task)
                     html += (f'<div class="task-item {klass}" title="{task["task"]}">'
                              f'{task["start_time"]} {task["task"][:12]}</div>')
             html += '</td>'
@@ -682,8 +696,7 @@ def create_monthly_calendar(schedule: List[Dict], month: int, year: int) -> str:
                 html += '<div class="calendar-day"><div class="calendar-day-number">' + str(day_num) + '</div>'
                 if day_num in date_to_tasks:
                     for task in date_to_tasks[day_num]:
-                        priority = task.get('priority_name', 'MEDIUM').upper()
-                        priority_class = 'task-item-high' if 'H' in priority else ('task-item-medium' if 'M' in priority else 'task-item-low')
+                        priority_class = _item_classes(task)
                         time_str = task.get('start_time', '')
                         html += f'<div class="task-item {priority_class}" title="{task["task"]}">{time_str} {task["task"][:15]}</div>'
                 html += '</div>'
