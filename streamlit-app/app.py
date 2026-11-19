@@ -1,4 +1,4 @@
-﻿import streamlit as st
+import streamlit as st
 import pandas as pd
 from datetime import datetime
 import json
@@ -62,6 +62,10 @@ if 'options' not in st.session_state:
     st.session_state.options = None
 if 'selected_option' not in st.session_state:
     st.session_state.selected_option = None
+if 'analyze_done' not in st.session_state:
+    st.session_state.analyze_done = False
+if 'last_error' not in st.session_state:
+    st.session_state.last_error = None
 
 # Tabs
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["📝 Input", "🤖 Analysis", "🎯 Solutions", "📅 Calendar", "📥 Export"])
@@ -80,17 +84,55 @@ with tab1:
         if st.button(TEXTS["analyze"], type="primary", use_container_width=True):
             if user_input:
                 try:
-                    st.session_state.schedule = parse_schedule(user_input, language)
-                    st.session_state.conflicts = detect_conflicts(st.session_state.schedule)
-                    st.session_state.options = generate_options(
-                        st.session_state.schedule,
-                        st.session_state.conflicts,
-                        language
-                    )
-                    st.success("✅ Schedule analyzed!")
-                    st.rerun()
+                    with st.spinner("🤖 AI is analyzing your schedule... / AI 正在分析您的日程..."):
+                        st.session_state.schedule = parse_schedule(user_input, language)
+                        st.session_state.conflicts = detect_conflicts(st.session_state.schedule)
+                        st.session_state.options = generate_options(
+                            st.session_state.schedule,
+                            st.session_state.conflicts,
+                            language
+                        )
+                    st.session_state.analyze_done = True
+                    st.session_state.last_error = None
                 except Exception as e:
-                    st.error(f"Error: {str(e)}")
+                    st.session_state.analyze_done = False
+                    st.session_state.last_error = str(e)
+            else:
+                st.warning("⚠️ Please enter your schedule first / 请先输入日程")
+
+    # Persistent status box — shows after analyze completes and survives reruns
+    if st.session_state.get("last_error"):
+        st.error(f"❌ Error: {st.session_state.last_error}")
+    elif st.session_state.get("analyze_done") and st.session_state.schedule is not None:
+        n_tasks     = len(st.session_state.schedule)
+        n_conflicts = len(st.session_state.conflicts) if st.session_state.conflicts else 0
+        n_options   = len(st.session_state.options)   if st.session_state.options   else 0
+
+        if language == "English":
+            msg = (
+                f"✅ **Analysis complete!**  \n"
+                f"- Parsed **{n_tasks}** task(s)  \n"
+                f"- Found **{n_conflicts}** conflict(s)  \n"
+                f"- Generated **{n_options}** solution option(s)  \n\n"
+                f"👉 Click the tabs above to see details:  \n"
+                f"**🤖 Analysis** → your parsed schedule & conflicts  \n"
+                f"**🎯 Solutions** → 3 AI-generated adjustment plans  \n"
+                f"**📅 Calendar** → monthly view  \n"
+                f"**📥 Export** → download as CSV / ICS"
+            )
+        else:
+            msg = (
+                f"✅ **分析完成!**  \n"
+                f"- 解析出 **{n_tasks}** 个任务  \n"
+                f"- 发现 **{n_conflicts}** 个冲突  \n"
+                f"- 生成 **{n_options}** 个解决方案  \n\n"
+                f"👉 点击上方标签查看详情:  \n"
+                f"**🤖 分析** → 日程表格与冲突警告  \n"
+                f"**🎯 解决方案** → AI 生成的 3 个调整方案  \n"
+                f"**📅 月历** → 月视图  \n"
+                f"**📥 导出** → 下载 CSV / ICS 文件"
+            )
+        st.success(msg)
 
 with tab2:
     if st.session_state.schedule:
