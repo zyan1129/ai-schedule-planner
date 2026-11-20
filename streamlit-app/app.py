@@ -5,15 +5,12 @@ from utils import (
     parse_schedule,
     detect_conflicts,
     generate_options,
-    chat_with_ai,
     export_to_csv,
     export_to_ics,
     create_monthly_calendar,
     create_day_calendar,
     create_week_calendar,
     week_start_of,
-    PROVIDER_INFO,
-    _PROVIDER_CONFIGS,
 )
 
 st.set_page_config(
@@ -28,65 +25,12 @@ st.markdown("*Smart scheduling — local parsing first, AI only when you need it
 # Sidebar
 language = st.sidebar.selectbox("Language / 语言", ["English", "中文"])
 
-# ---------- Sidebar: AI provider settings ----------
+# NOTE: In-chat AI refinement and the sidebar AI provider picker were
+# removed on 2026-11-19 at the user's request. Option generation on the
+# Solutions tab still runs through generate_options(), which falls back
+# to a local hardcoded set when no API key is configured via .env or
+# st.secrets. There is no in-app key UI by design.
 _en = (language == "English")
-st.sidebar.divider()
-with st.sidebar.expander("🤖 AI Settings" if _en else "🤖 AI 设置", expanded=False):
-    st.caption(
-        "Pick a provider and paste your API key. Your key stays in this browser session only."
-        if _en
-        else "选一个服务商并填入你自己的 API key。Key 只存在当前浏览器会话里，刷新页面就会丢。"
-    )
-
-    provider_keys = list(PROVIDER_INFO.keys())
-    chosen = st.selectbox(
-        "Provider" if _en else "服务商",
-        provider_keys,
-        index=provider_keys.index(st.session_state.get("LLM_PROVIDER", "deepseek"))
-            if st.session_state.get("LLM_PROVIDER", "deepseek") in provider_keys else 0,
-        format_func=lambda k: PROVIDER_INFO[k]["label"],
-    )
-    st.session_state["LLM_PROVIDER"] = chosen
-
-    info = PROVIDER_INFO[chosen]
-    st.info(info["limits_en"] if _en else info["limits_zh"], icon="ℹ️")
-    st.caption(f"🔗 {info['signup']}")
-
-    # Per-provider API key input (each provider has its own env var name)
-    cfg = _PROVIDER_CONFIGS[chosen]
-    key_name = cfg["key_env"]
-    current_key = st.session_state.get(key_name, "")
-    new_key = st.text_input(
-        f"{info['label']} API Key",
-        value=current_key,
-        type="password",
-        placeholder="sk-..." if chosen != "gemini" else "AIza...",
-    )
-    st.session_state[key_name] = new_key
-
-    # Optional model override
-    model_name = cfg["model_env"]
-    current_model = st.session_state.get(model_name, "")
-    new_model = st.text_input(
-        f"Model" if _en else "模型名",
-        value=current_model,
-        placeholder=cfg["default_model"],
-        help=(f"Default: {cfg['default_model']}. Leave empty to use default."
-              if _en else f"默认：{cfg['default_model']}。留空即使用默认。"),
-    )
-    st.session_state[model_name] = new_model
-
-    # Status indicator
-    if new_key:
-        st.success(
-            f"✅ Using {info['label']} with your key" if _en
-            else f"✅ 已配置 {info['label']} 的 key"
-        )
-    else:
-        st.warning(
-            "⚠️ No key — AI features will fall back to local defaults." if _en
-            else "⚠️ 未填 key — AI 功能将使用本地硬编码方案。"
-        )
 
 if language == "English":
     TEXTS = {
@@ -105,10 +49,6 @@ if language == "English":
         "ics_btn": "📅 Download as ICS (Calendar)",
         "month": "Select Month",
         "year": "Select Year",
-        "chat_header": "💬 Chat with AI to refine the plan",
-        "chat_placeholder": "Tell the AI what you'd prefer (e.g. 'I want to keep CS101 fixed, move the lab')...",
-        "chat_send": "Send",
-        "chat_clear": "Clear chat",
         "select_option": "Adopt & edit times",
         "option_adopted": "✅ Option adopted — edit the times below, then click Apply.",
         "edit_header": "✏️ Reschedule the conflicting tasks",
@@ -141,10 +81,6 @@ else:
         "ics_btn": "📅 下载为日历",
         "month": "选择月份",
         "year": "选择年份",
-        "chat_header": "💬 和 AI 对话，迭代出最适合的方案",
-        "chat_placeholder": "告诉 AI 你的偏好（比如：'CS101 不能动，把实验挪开'）...",
-        "chat_send": "发送",
-        "chat_clear": "清空对话",
         "select_option": "采用并编辑时间",
         "option_adopted": "✅ 已采用方案 — 在下方编辑时间后点击 Apply。",
         "edit_header": "✏️ 为冲突任务重新安排时间",
@@ -167,7 +103,6 @@ for key, default in [
     ("conflicts", None),
     ("options", None),
     ("selected_option", None),
-    ("chat_history", []),
     ("options_ready", False),
     # The editable "current" schedule shown on Calendar / Export. Starts as a
     # copy of what the parser produced and gets replaced when the user applies
@@ -213,7 +148,6 @@ with tab1:
                     st.session_state.options_ready = False
                     st.session_state.selected_option = None
                     st.session_state.editing = False
-                    st.session_state.chat_history = []
                     # No st.rerun() — it discards the success message. Streamlit
                     # already reruns after a button click, so the tabs below
                     # will pick up the new schedule on their own.
@@ -423,38 +357,8 @@ with tab3:
                     st.session_state.editing = False
                     st.rerun()
 
-        st.divider()
-
-        # ---------- Chat module ----------
-        st.subheader(TEXTS["chat_header"])
-
-        # Render chat history
-        for turn in st.session_state.chat_history:
-            with st.chat_message(turn["role"]):
-                st.markdown(turn["content"])
-
-        user_msg = st.chat_input(TEXTS["chat_placeholder"])
-        if user_msg:
-            st.session_state.chat_history.append({"role": "user", "content": user_msg})
-            with st.chat_message("user"):
-                st.markdown(user_msg)
-            with st.chat_message("assistant"):
-                with st.spinner("..."):
-                    reply = chat_with_ai(
-                        user_msg,
-                        st.session_state.schedule,
-                        st.session_state.conflicts,
-                        st.session_state.options or [],
-                        st.session_state.chat_history[:-1],
-                        language,
-                    )
-                st.markdown(reply)
-            st.session_state.chat_history.append({"role": "assistant", "content": reply})
-
-        if st.session_state.chat_history:
-            if st.button(TEXTS["chat_clear"]):
-                st.session_state.chat_history = []
-                st.rerun()
+        # (Chat module removed 2026-11-19 at user's request. Users refine
+        # their plan through the inline task editor above, not via chat.)
 
 # ---------- Tab 4: Calendar (Day / Week / Month) ----------
 with tab4:
