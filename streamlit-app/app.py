@@ -426,35 +426,68 @@ with tab3:
         st.divider()
 
         # ---------- Chat module ----------
+        # NOTE: st.chat_input is NOT allowed inside st.tabs (Streamlit raises
+        # or silently no-ops). Use a plain text_input + form inside a form
+        # context so Enter submits and layout stays tab-safe.
         st.subheader(TEXTS["chat_header"])
+
+        # Quick visibility check: tell the user if no key is configured so
+        # they don't wait forever wondering why nothing happens.
+        from utils import _get_llm_client as _probe_llm
+        _client, _, _prov = _probe_llm()
+        if _client is None:
+            st.warning(
+                (f"⚠️ No API key configured for provider **{_prov}**. "
+                 "Open the sidebar → **AI Settings** and paste a key, "
+                 "or chat will reply with a fallback message.")
+                if _en
+                else (f"⚠️ 当前 provider **{_prov}** 没有配 API key。"
+                      "请打开侧边栏的 **AI 设置** 填入 key，否则对话只会返回占位提示。")
+            )
 
         # Render chat history
         for turn in st.session_state.chat_history:
             with st.chat_message(turn["role"]):
                 st.markdown(turn["content"])
 
-        user_msg = st.chat_input(TEXTS["chat_placeholder"])
-        if user_msg:
-            st.session_state.chat_history.append({"role": "user", "content": user_msg})
-            with st.chat_message("user"):
-                st.markdown(user_msg)
-            with st.chat_message("assistant"):
-                with st.spinner("..."):
-                    reply = chat_with_ai(
-                        user_msg,
-                        st.session_state.schedule,
-                        st.session_state.conflicts,
-                        st.session_state.options or [],
-                        st.session_state.chat_history[:-1],
-                        language,
-                    )
-                st.markdown(reply)
-            st.session_state.chat_history.append({"role": "assistant", "content": reply})
+        # Form so pressing Enter submits even inside a tab.
+        with st.form(key="chat_form", clear_on_submit=True):
+            user_msg = st.text_input(
+                "Message" if _en else "消息",
+                placeholder=TEXTS["chat_placeholder"],
+                label_visibility="collapsed",
+                key="chat_input_field",
+            )
+            col_send, col_clear = st.columns([1, 1])
+            with col_send:
+                send_clicked = st.form_submit_button(
+                    "↑ " + TEXTS["chat_send"],
+                    type="primary",
+                    use_container_width=True,
+                )
+            with col_clear:
+                clear_clicked = st.form_submit_button(
+                    TEXTS["chat_clear"],
+                    use_container_width=True,
+                )
 
-        if st.session_state.chat_history:
-            if st.button(TEXTS["chat_clear"]):
-                st.session_state.chat_history = []
-                st.rerun()
+        if clear_clicked:
+            st.session_state.chat_history = []
+            st.rerun()
+
+        if send_clicked and user_msg and user_msg.strip():
+            st.session_state.chat_history.append({"role": "user", "content": user_msg.strip()})
+            with st.spinner("..."):
+                reply = chat_with_ai(
+                    user_msg.strip(),
+                    st.session_state.schedule,
+                    st.session_state.conflicts,
+                    st.session_state.options or [],
+                    st.session_state.chat_history[:-1],
+                    language,
+                )
+            st.session_state.chat_history.append({"role": "assistant", "content": reply})
+            st.rerun()
 
 # ---------- Tab 4: Calendar (Day / Week / Month) ----------
 with tab4:
