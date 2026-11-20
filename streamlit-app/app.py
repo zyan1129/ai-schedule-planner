@@ -15,6 +15,7 @@ from utils import (
     PROVIDER_INFO,
     _PROVIDER_CONFIGS,
 )
+import storage
 
 st.set_page_config(
     page_title="SmartSchedule - AI Schedule Planner",
@@ -27,6 +28,48 @@ st.markdown("*Smart scheduling — local parsing first, AI only when you need it
 
 # Sidebar
 language = st.sidebar.selectbox("Language / 语言", ["English", "中文"])
+
+# ---------- Login gate (Google via st.login) ----------
+# Without an [auth] section in secrets the app runs in guest mode, so local
+# development keeps working with no setup.
+AUTH_ON = storage.auth_configured()
+DB_ON = AUTH_ON and storage.db_configured()
+USER_ID = None
+
+if AUTH_ON:
+    if not st.user.get("is_logged_in", False):
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
+            st.markdown("### " + ("Welcome 👋" if language == "English" else "欢迎 👋"))
+            st.write(
+                "Log in to save your schedule and pick up where you left off on any device."
+                if language == "English"
+                else "登录后，你的日程会自动保存，在任何设备上都能接着用。"
+            )
+            if st.button(
+                "🔐 Log in with Google" if language == "English" else "🔐 使用 Google 登录",
+                type="primary",
+                use_container_width=True,
+            ):
+                st.login()
+        st.stop()
+
+    USER_ID = st.user.sub
+    with st.sidebar:
+        st.divider()
+        c_pic, c_name = st.columns([1, 3])
+        if st.user.get("picture"):
+            c_pic.image(st.user.picture, width=40)
+        c_name.markdown(f"**{st.user.get('name') or st.user.get('email')}**")
+        if not DB_ON:
+            st.caption(
+                "⚠️ Database not configured — data is kept for this session only."
+                if language == "English"
+                else "⚠️ 数据库未配置 — 数据只保存在当前会话。"
+            )
+        if st.button("Logout" if language == "English" else "退出登录", use_container_width=True):
+            st.session_state.clear()
+            st.logout()
 
 # ---------- Sidebar: AI provider settings ----------
 _en = (language == "English")
@@ -112,7 +155,7 @@ if language == "English":
         "select_option": "Adopt & edit times",
         "option_adopted": "✅ Option adopted — edit the times below, then click Apply.",
         "edit_header": "✏️ Reschedule the conflicting tasks",
-        "edit_hint": "Set a new time for each task, or mark it as unsure if you haven't decided yet. Unsure tasks still show on the calendar, dimmed, and will be flagged for review once login & memory are in place.",
+        "edit_hint": "Set a new time for each task, or mark it as unsure if you haven't decided yet. Unsure tasks still show on the calendar, dimmed, and you'll be reminded about them next time you log in.",
         "mark_unsure": "⏳ Mark as unsure (decide later)",
         "apply_edits": "💾 Apply changes",
         "edits_applied": "✅ Changes applied — see them on the Calendar and Export tabs.",
@@ -148,7 +191,7 @@ else:
         "select_option": "采用并编辑时间",
         "option_adopted": "✅ 已采用方案 — 在下方编辑时间后点击 Apply。",
         "edit_header": "✏️ 为冲突任务重新安排时间",
-        "edit_hint": "给每个任务设个新时间，如果还没想好可以标记为 unsure。Unsure 的任务会在日历里以灰色显示；等登录和记忆持久化做好后，会在下次登录时提醒你。",
+        "edit_hint": "给每个任务设个新时间，如果还没想好可以标记为 unsure。Unsure 的任务会在日历里以灰色显示，下次登录时会提醒你。",
         "mark_unsure": "⏳ 暂时不确定（之后再定）",
         "apply_edits": "💾 应用改动",
         "edits_applied": "✅ 已应用 — 请到日历或导出页查看。",
@@ -177,6 +220,65 @@ for key, default in [
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
+
+
+def _persist():
+    """Write the current schedule to Supabase (no-op without a database)."""
+    if not (DB_ON and USER_ID):
+        return
+    try:
+        storage.save_schedule(
+            USER_ID,
+            st.session_state.schedule,
+            st.session_state.working_schedule,
+            st.session_state.conflicts,
+        )
+    except Exception as e:
+        st.warning(
+            f"⚠️ Couldn't save to the database: {e}" if _en
+            else f"⚠️ 保存到数据库失败：{e}"
+        )
+
+
+# Load the user's saved schedule once per login session.
+if DB_ON and st.session_state.get("loaded_for") != USER_ID:
+    try:
+        storage.upsert_profile(st.user.to_dict())
+        saved = storage.load_schedule(USER_ID)
+        if saved and saved.get("schedule"):
+            st.session_state.schedule = saved["schedule"]
+            st.session_state.working_schedule = saved["working_schedule"] or saved["schedule"]
+            st.session_state.conflicts = saved["conflicts"] or []
+        st.session_state.show_unsure_banner = True
+    except Exception as e:
+        st.error(
+            f"⚠️ Couldn't load your saved schedule: {e}" if _en
+            else f"⚠️ 读取已保存的日程失败：{e}"
+        )
+    st.session_state.loaded_for = USER_ID
+
+# ---------- Reminder: tasks still marked unsure ----------
+_unsure = [t for t in (st.session_state.working_schedule or []) if t.get('status') == 'unsure']
+if _unsure and st.session_state.get("show_unsure_banner"):
+    names = ", ".join(f"**{t['task']}**" for t in _unsure)
+    st.warning(
+        f"⏳ You have {len(_unsure)} task(s) with undecided times: {names}" if _en
+        else f"⏳ 你有 {len(_unsure)} 个任务时间还没定：{names}"
+    )
+    b1, b2, _ = st.columns([1, 1, 3])
+    if b1.button("Review them" if _en else "现在处理", type="primary"):
+        st.session_state.editing = True
+        st.session_state.show_unsure_banner = False
+        st.session_state.unsure_review_hint = True
+        st.rerun()
+    if b2.button("Dismiss" if _en else "稍后再说"):
+        st.session_state.show_unsure_banner = False
+        st.rerun()
+if st.session_state.pop("unsure_review_hint", False):
+    st.info(
+        "👉 Open the **Solutions** tab to set times for your unsure tasks." if _en
+        else "👉 打开 **方案** 页，为不确定的任务设定时间。"
+    )
 
 # ---------- Tabs ----------
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -218,6 +320,7 @@ with tab1:
                     # already reruns after a button click, so the tabs below
                     # will pick up the new schedule on their own.
                     st.session_state["just_parsed"] = True
+                    _persist()
                 except Exception as e:
                     st.error(f"Error: {e}")
 
@@ -299,14 +402,19 @@ with tab3:
             if language == "English"
             else "👈 请先解析日程。"
         )
-    elif not st.session_state.conflicts:
+    elif not st.session_state.conflicts and not _unsure:
         st.success(TEXTS["no_conflicts"])
         st.info(TEXTS["no_conflicts_banner"])
     else:
-        st.subheader(TEXTS["options"])
+        if not st.session_state.conflicts:
+            # Only unsure tasks left — skip the AI and go straight to editing.
+            st.success(TEXTS["no_conflicts"])
+            st.session_state.editing = True
+        else:
+            st.subheader(TEXTS["options"])
 
         # Generate options lazily — only on first visit with conflicts
-        if not st.session_state.options_ready:
+        if st.session_state.conflicts and not st.session_state.options_ready:
             with st.spinner(
                 "🤖 Asking AI for options..." if language == "English" else "🤖 让 AI 生成方案中..."
             ):
@@ -381,10 +489,13 @@ with tab3:
                     )
                     return new_day, new_start, new_end, unsure
 
-            conflict_indices = [i for i, t in enumerate(working) if t['task'] in conflict_task_names]
+            conflict_indices = [
+                i for i, t in enumerate(working)
+                if t['task'] in conflict_task_names or t.get('status') == 'unsure'
+            ]
             other_indices = [i for i, t in enumerate(working) if i not in conflict_indices]
 
-            st.markdown("**" + ("Conflicting tasks" if _en else "有冲突的任务") + "**")
+            st.markdown("**" + ("Conflicting / unsure tasks" if _en else "有冲突 / 未确定的任务") + "**")
             edits = {}
             for idx in conflict_indices:
                 edits[idx] = _render_task_row(idx, working[idx], st.container())
@@ -414,6 +525,7 @@ with tab3:
                     st.session_state.conflicts = detect_conflicts(
                         [t for t in working if t.get('status') != 'unsure']
                     )
+                    _persist()
                     st.success(TEXTS["edits_applied"])
             with col_b:
                 if st.button(TEXTS["reset_edits"], use_container_width=True):
@@ -421,6 +533,7 @@ with tab3:
                     st.session_state.working_schedule = _copy.deepcopy(st.session_state.schedule)
                     st.session_state.conflicts = detect_conflicts(st.session_state.schedule)
                     st.session_state.editing = False
+                    _persist()
                     st.rerun()
 
         st.divider()

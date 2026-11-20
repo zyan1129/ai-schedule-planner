@@ -34,3 +34,10 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Streamlit secrets (NEVER commit!)
+.env
+.streamlit/secrets.toml
+**/.streamlit/secrets.toml
+__pycache__/
+*.pyc

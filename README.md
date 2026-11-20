@@ -131,6 +131,13 @@ App opens at: `http://localhost:8501`
 - **Status:** Live & Active ✅
 - **Updates:** Auto-deploy on GitHub push
 
+### Login & saved schedules (Google + Supabase)
+Optional. Without these secrets the app runs in guest mode, with no login and nothing saved.
+
+1. **Google OAuth client.** In Google Cloud Console, go to APIs & Services → Credentials → Create credentials → OAuth client ID → Web application. Add the authorized redirect URIs `https://<your-app>.streamlit.app/oauth2callback` and `http://localhost:8501/oauth2callback`.
+2. **Supabase project.** Create a project at supabase.com, open the SQL Editor, and run `streamlit-app/supabase/migrations/001_init.sql`.
+3. **Secrets.** Copy `streamlit-app/.streamlit/secrets.toml.example`, fill in the values, and paste the result into Streamlit Cloud → app → Settings → Secrets. For local dev, save it as `streamlit-app/.streamlit/secrets.toml` instead (it's gitignored).
+
 ### GitHub Pages
 - **URL:** https://zyan1129.github.io/ai-schedule-planner
 - **Status:** Landing pages
